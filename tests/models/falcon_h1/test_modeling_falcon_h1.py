@@ -22,6 +22,7 @@ import pytest
 from transformers import FalconH1Config, is_torch_available
 from transformers.testing_utils import (
     require_torch,
+    require_torch_accelerator,
     require_torch_gpu,
     slow,
     torch_device,
@@ -477,7 +478,7 @@ class FalconH1ModelTest(ModelTesterMixin, GenerationTesterMixin, PipelineTesterM
 
 @slow
 @require_torch
-@require_torch_gpu
+@require_torch_accelerator
 class FalconH1ModelIntegrationTest(unittest.TestCase):
     @slow
     def test_falcon_h1_hard(self):
@@ -509,7 +510,8 @@ class FalconH1ModelIntegrationTest(unittest.TestCase):
         model_id = "tiiuae/Falcon-H1-1.5B-Deep-Instruct"
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         model = FalconH1ForCausalLM.from_pretrained(model_id, torch_dtype=torch.bfloat16, device_map="auto")
-        device = "cuda"
+        device = torch_device
+        print("THIS IS DEVICE", device)
         messages = [{"role": "user", "content": "Tell me about the french revolution."}]
         input_text = tokenizer.apply_chat_template(messages, tokenize=False)
         inputs = tokenizer.encode(input_text, return_tensors="pt").to(device)
@@ -518,5 +520,19 @@ class FalconH1ModelIntegrationTest(unittest.TestCase):
             outputs = model.generate(inputs, max_new_tokens=512, do_sample=False)
 
         generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        if generated_text != EXPECTED_TEXT:
+            print("Generated Text:", generated_text)
+            print("Expected Text:", EXPECTED_TEXT)
+        #from nltk.translate.bleu_score import sentence_bleu
 
+        #score = sentence_bleu([EXPECTED_TEXT.split()], generated_text.split())
+        #assert score > 0.8  # Assert BLEU score is above a threshold
+        from sklearn.metrics.pairwise import cosine_similarity
+        from sentence_transformers import SentenceTransformer
+
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        expected_embedding = model.encode(EXPECTED_TEXT)
+        generated_embedding = model.encode(generated_text)
+        similarity = cosine_similarity([expected_embedding], [generated_embedding])[0][0]
+        assert similarity > 0.9  # Assert cosine similarity is above a threshold
         self.assertEqual(generated_text, EXPECTED_TEXT)
